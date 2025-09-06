@@ -1,0 +1,82 @@
+[
+  {
+    "customer_id": 3,
+    "product_id": 102.0,
+    "name": "Bicchieri plastica",
+    "predicted_qty": 8,
+    "normalized_score": 1.0,
+    "reason": "Reorder recommendation"
+  },
+  {
+    "customer_id": 3,
+    "product_id": 101.0,
+    "name": "Piatti compostabili",
+    "predicted_qty": 1,
+    "normalized_score": 0.1150338443245105,
+    "reason": "Associated with product 102.0"
+  },
+  {
+    "customer_id": 2,
+    "product_id": 105.0,
+    "name": "Tovaglioli carta",
+    "predicted_qty": 20,
+    "normalized_score": 1.0,
+    "reason": "Reorder recommendation"
+  },
+  {
+    "customer_id": 2,
+    "product_id": 101.0,
+    "name": "Piatti compostabili",
+    "predicted_qty": 3,
+    "normalized_score": 0.5976176940935708,
+    "reason": "Reorder recommendation"
+  },
+  {
+    "customer_id": 2,
+    "product_id": 104.0,
+    "name": "Guanti monouso",
+    "predicted_qty": 5,
+    "normalized_score": 0.5976176940935708,
+    "reason": "Reorder recommendation"
+  },
+  {
+    "customer_id": 2,
+    "product_id": 102.0,
+    "name": "Bicchieri plastica",
+    "predicted_qty": 1,
+    "normalized_score": 0.1071428571428571,
+    "reason": "Associated with product 101.0"
+  },
+  {
+    "customer_id": 1,
+    "product_id": 103.0,
+    "name": "Detergente sgrassante",
+    "predicted_qty": 2,
+    "normalized_score": 1.0,
+    "reason": "Reorder recommendation"
+  },
+  {
+    "customer_id": 1,
+    "product_id": 101.0,
+    "name": "Piatti compostabili",
+    "predicted_qty": 2,
+    "normalized_score": 0.3459992572156332,
+    "reason": "Reorder recommendation"
+  },
+  {
+    "customer_id": 1,
+    "product_id": 102.0,
+    "name": "Bicchieri plastica",
+    "predicted_qty": 3,
+    "normalized_score": 0.3459992572156332,
+    "reason": "Reorder recommendation"
+  },
+  {
+    "customer_id": 1,
+    "product_id": 104.0,
+    "name": "Guanti monouso",
+    "predicted_qty": 3,
+    "normalized_score": 0.2668956584754025,
+    "reason": "Associated with product 101.0"
+  }
+]
