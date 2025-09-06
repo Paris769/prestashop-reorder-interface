@@ -1,28 +1,39 @@
 import streamlit as st
 import pandas as pd
-import json
 
 st.title("Gestione Riordini PrestaShop")
 
-# Carica dati da file JSON
+# Carica i dati e memorizzali in cache
+@st.cache_data
 def load_data():
-    with open('recommendations_demo.json', 'r') as f:
-        return json.load(f)
+    return pd.read_json('recommendations_demo.json')
 
-# Carica i dati solo una volta con caching
-if 'data' not in st.session_state:
-    st.session_state['data'] = load_data()
+# Carica tutto il DataFrame
+all_df = load_data()
 
-# Lista clienti basata sui dati
-clienti = list(st.session_state['data'].keys())
-cliente = st.selectbox("Seleziona cliente", clienti)
+# Assicurati che il campo quantità prevista sia intero se presente
+if 'predicted_qty' in all_df.columns:
+    all_df['predicted_qty'] = all_df['predicted_qty'].astype(int)
 
-# DataFrame dei prodotti per il cliente selezionato
-df = pd.DataFrame(st.session_state['data'][cliente])
+# Lista clienti disponibili
+client_ids = sorted(all_df['customer_id'].unique())
+cliente = st.selectbox("Seleziona cliente", client_ids)
+
+# Filtra i dati per il cliente selezionato
+df_client = all_df[all_df['customer_id'] == cliente].copy()
+
+# Prepara il DataFrame da visualizzare
+rename_map = {
+    'product_id': 'ID prodotto',
+    'name': 'Prodotto',
+    'predicted_qty': 'Quantità suggerita',
+    'normalized_score': 'Punteggio',
+    'reason': 'Motivazione'
+}
+df_display = df_client.rename(columns=rename_map)[list(rename_map.values())]
 
 st.subheader("Prodotti consigliati")
-# Editor interattivo per modificare quantità o rimuovere prodotti
-edited_df = st.data_editor(df, num_rows="dynamic")
+edited_df = st.data_editor(df_display, num_rows="dynamic")
 
 st.subheader("Aggiungi immagini")
 images = st.file_uploader("Carica una o più immagini", accept_multiple_files=True)
@@ -30,18 +41,13 @@ images = st.file_uploader("Carica una o più immagini", accept_multiple_files=Tr
 metodo = st.selectbox("Metodo di invio", ["Email", "WhatsApp"])
 testo = st.text_area("Testo del messaggio")
 
-# Impostazioni PrestaShop in sidebar
 st.sidebar.header("Impostazioni PrestaShop")
-api_key = st.sidebar.text_input("Chiave API PrestaShop", type='password')
+api_key = st.sidebar.text_input("Chiave API PrestaShop", type="password")
 
 if st.button("Invia proposta"):
-    st.write("Proposta pronta per: ", cliente)
-    st.write("Prodotti selezionati:")
+    st.write(f"Proposta pronta per cliente: {cliente}")
     st.dataframe(edited_df)
-    if images:
-        st.write("Numero immagini allegate: ", len(images))
-    else:
-        st.write("Nessuna immagine allegata")
-    st.write("Metodo di invio: ", metodo)
-    st.write("Testo del messaggio: ")
+    st.write("Numero immagini allegate:", len(images) if images else 0)
+    st.write("Metodo di invio:", metodo)
+    st.write("Testo del messaggio:")
     st.write(testo)
