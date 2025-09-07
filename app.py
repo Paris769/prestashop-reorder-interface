@@ -2,13 +2,20 @@ import io
 from datetime import datetime
 import pandas as pd
 import streamlit as st
+import requests
+import xml.etree.ElementTree as ET
 
 # Configurazione della pagina
 st.set_page_config(page_title="Gestione Riordini PrestaShop", layout="wide")
 
-# Barra laterale per la chiave API
+# Barra laterale per la chiave API e l'URL del negozio PrestaShop
 with st.sidebar:
-    st.text_input("Chiave API PrestaShop", type="password")
+    # La chiave API è necessaria per autenticare le chiamate al Webservice
+    api_key_input = st.text_input("Chiave API PrestaShop", type="password")
+    # URL base del negozio (es. https://mioshop.it). Serve per costruire gli endpoint
+    base_url_input = st.text_input(
+        "URL base PrestaShop", placeholder="https://example.com"
+    )
 
 # Funzioni di utilità per l'importazione di Excel/CSV
 def _load_excel_or_csv(uploaded_file: io.BytesIO) -> pd.DataFrame:
@@ -145,6 +152,196 @@ def generate_recommendations(
             .reset_index(drop=True)
         )
     return df_recs.copy()
+
+# ---------- Funzioni di integrazione con PrestaShop ----------
+def _build_cart_xml(customer_id: str, items: list, id_currency: int = 1, id_lang: int = 1) -> str:
+    """
+    Costruisce una stringa XML per la creazione di un carrello su PrestaShop.
+
+    Parameters
+    ----------
+    customer_id : str
+        ID del cliente in PrestaShop.
+    items : list of dict
+        Lista di articoli da inserire nel carrello; ciascun dizionario deve contenere
+        'product_id' e 'quantity'.
+    id_currency : int
+        ID della valuta (default: 1 per Euro).
+    id_lang : int
+        ID della lingua (default: 1 per Italiano).
+
+    Returns
+    -------
+    str
+        XML formattato come richiesto dal Webservice PrestaShop.
+    """
+    rows_xml = ""
+    for item in items:
+        rows_xml += (
+            f"        <cart_row>\n"
+            f"          <id_product><![CDATA[{item['product_id']}]]></id_product>\n"
+            f"          <quantity><![CDATA[{item['quantity']}]]></quantity>\n"
+            f"        </cart_row>\n"
+        )
+    xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<prestashop>\n"
+        "  <cart>\n"
+        f"    <id_currency><![CDATA[{id_currency}]]></id_currency>\n"
+        f"    <id_lang><![CDATA[{id_lang}]]></id_lang>\n"
+        f"    <id_customer><![CDATA[{customer_id}]]></id_customer>\n"
+        "    <associations>\n"
+        "      <cart_rows nodeType=\"cart_row\" virtualEntity=\"true\">\n"
+        f"{rows_xml}"
+        "      </cart_rows>\n"
+        "    </associations>\n"
+        "  </cart>\n"
+        "</prestashop>"
+    )
+    return xml
+
+
+def _build_order_xml(
+    customer_id: str,
+    cart_id: int,
+    items: list,
+    id_address_delivery: int = 1,
+    id_address_invoice: int = 1,
+    id_currency: int = 1,
+    id_lang: int = 1,
+    module: str = "bankwire",
+    payment: str = "Pagamento su conto bancario",
+) -> str:
+    """
+    Costruisce una stringa XML per la creazione di un ordine su PrestaShop.
+
+    Parameters
+    ----------
+    customer_id : str
+        ID del cliente.
+    cart_id : int
+        ID del carrello appena creato.
+    items : list of dict
+        Lista di articoli con 'product_id' e 'quantity'.
+    id_address_delivery : int
+        ID indirizzo di consegna (default 1).
+    id_address_invoice : int
+        ID indirizzo di fatturazione (default 1).
+    id_currency : int
+        ID della valuta (default 1).
+    id_lang : int
+        ID della lingua (default 1).
+    module : str
+        Nome del modulo di pagamento (default 'bankwire').
+    payment : str
+        Descrizione del pagamento (default 'Pagamento su conto bancario').
+
+    Returns
+    -------
+    str
+        XML formattato per la creazione di un ordine.
+    """
+    rows_xml = ""
+    for item in items:
+        rows_xml += (
+            f"        <order_row>\n"
+            f"          <product_id><![CDATA[{item['product_id']}]]></product_id>\n"
+            f"          <product_quantity><![CDATA[{item['quantity']}]]></product_quantity>\n"
+            f"        </order_row>\n"
+        )
+    xml = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<prestashop>\n"
+        "  <order>\n"
+        f"    <id_customer><![CDATA[{customer_id}]]></id_customer>\n"
+        f"    <id_address_delivery><![CDATA[{id_address_delivery}]]></id_address_delivery>\n"
+        f"    <id_address_invoice><![CDATA[{id_address_invoice}]]></id_address_invoice>\n"
+        f"    <id_cart><![CDATA[{cart_id}]]></id_cart>\n"
+        f"    <id_currency><![CDATA[{id_currency}]]></id_currency>\n"
+        f"    <id_lang><![CDATA[{id_lang}]]></id_lang>\n"
+        "    <current_state><![CDATA[2]]></current_state>\n"
+        f"    <module><![CDATA[{module}]]></module>\n"
+        f"    <payment><![CDATA[{payment}]]></payment>\n"
+        "    <total_paid><![CDATA[0]]></total_paid>\n"
+        "    <total_paid_real><![CDATA[0]]></total_paid_real>\n"
+        "    <total_products><![CDATA[0]]></total_products>\n"
+        "    <total_products_wt><![CDATA[0]]></total_products_wt>\n"
+        "    <conversion_rate><![CDATA[1]]></conversion_rate>\n"
+        "    <associations>\n"
+        "      <order_rows nodeType=\"order_row\" virtualEntity=\"true\">\n"
+        f"{rows_xml}"
+        "      </order_rows>\n"
+        "    </associations>\n"
+        "  </order>\n"
+        "</prestashop>"
+    )
+    return xml
+
+
+def submit_order_to_prestashop(api_key: str, base_url: str, customer_id: str, items: list) -> str:
+    """
+    Invoca il Webservice PrestaShop per creare un carrello e un ordine.
+
+    Parameters
+    ----------
+    api_key : str
+        Chiave API del Webservice PrestaShop.
+    base_url : str
+        URL base del negozio (es. https://mioshop.it). Non deve terminare con slash.
+    customer_id : str
+        ID del cliente.
+    items : list of dict
+        Lista di prodotti da ordinare, ciascuno con 'product_id' e 'quantity'.
+
+    Returns
+    -------
+    str
+        Messaggio di stato dell'operazione.
+    """
+    # Normalizza l'URL
+    base_url = base_url.rstrip("/")
+    try:
+        # Costruisci XML del carrello
+        cart_xml = _build_cart_xml(customer_id, items)
+        cart_endpoint = f"{base_url}/api/carts"
+        headers = {"Content-Type": "application/xml"}
+        # Effettua richiesta per creare il carrello
+        cart_resp = requests.post(
+            cart_endpoint,
+            data=cart_xml.encode("utf-8"),
+            headers=headers,
+            auth=(api_key, ""),
+            timeout=30,
+        )
+        if not cart_resp.ok:
+            return f"Errore creazione carrello: {cart_resp.status_code} {cart_resp.text}"
+        # Parsea la risposta per ottenere l'ID del carrello
+        try:
+            root = ET.fromstring(cart_resp.content)
+            cart_id = int(root.find('.//cart/id').text)
+        except Exception:
+            return "Cart creato ma impossibile leggere ID carrello dalla risposta."
+        # Costruisci XML dell'ordine
+        order_xml = _build_order_xml(customer_id, cart_id, items)
+        order_endpoint = f"{base_url}/api/orders"
+        order_resp = requests.post(
+            order_endpoint,
+            data=order_xml.encode("utf-8"),
+            headers=headers,
+            auth=(api_key, ""),
+            timeout=30,
+        )
+        if not order_resp.ok:
+            return f"Errore creazione ordine: {order_resp.status_code} {order_resp.text}"
+        # Parsea la risposta per ottenere l'ID ordine
+        try:
+            root_o = ET.fromstring(order_resp.content)
+            order_id = root_o.find('.//order/id').text
+        except Exception:
+            order_id = "(id non disponibile)"
+        return f"Ordine creato con successo su PrestaShop (ID carrello {cart_id}, ID ordine {order_id})."
+    except Exception as e:
+        return f"Errore invio a PrestaShop: {e}"
 
 # Inizializza session_state se necessario
 if "all_df" not in st.session_state:
@@ -460,17 +657,49 @@ with tab_manage:
         )
 
         if st.button("Finalizza e Invia"):
-            st.success("Ordine pronto per essere inviato (simulazione).")
-            st.write("Cliente:", selected_client)
-            st.write("Prodotti selezionati:")
-            st.dataframe(
-                edited, use_container_width=True
-            )
-            if uploaded_images:
-                st.write(f"Immagini allegate: {len(uploaded_images)}")
-            st.write("Metodo di invio:", method)
-            st.write("Testo del messaggio:")
-            st.write(message_text)
+            # Verifica presenza di API key e base URL
+            if api_key_input and base_url_input:
+                # Converte il DataFrame editato in un elenco di prodotti per l'ordine
+                items_to_order = []
+                for _, row in edited.iterrows():
+                    # Usa i campi originali product_id e predicted_qty
+                    try:
+                        prod_id = str(row["product_id"])
+                        qty = int(row["predicted_qty"])
+                        if qty > 0:
+                            items_to_order.append({"product_id": prod_id, "quantity": qty})
+                    except Exception:
+                        continue
+                if not items_to_order:
+                    st.error("Nessun prodotto selezionato per l'ordine.")
+                else:
+                    # Invia ordine a PrestaShop
+                    status_msg = submit_order_to_prestashop(
+                        api_key_input,
+                        base_url_input,
+                        str(selected_client),
+                        items_to_order,
+                    )
+                    # Mostra risultato
+                    if status_msg.startswith("Ordine creato"):
+                        st.success(status_msg)
+                    else:
+                        st.error(status_msg)
+                    # Mostra riepilogo dell'ordine
+                    st.write("Cliente:", selected_client)
+                    st.write("Prodotti selezionati:")
+                    st.dataframe(
+                        edited, use_container_width=True
+                    )
+                    if uploaded_images:
+                        st.write(f"Immagini allegate: {len(uploaded_images)}")
+                    st.write("Metodo di invio:", method)
+                    st.write("Testo del messaggio:")
+                    st.write(message_text)
+            else:
+                st.error(
+                    "Per inviare l'ordine a PrestaShop devi inserire la chiave API e l'URL del negozio nella barra laterale."
+                )
     else:
         st.info(
             "Nessun dato disponibile. Carica un file nella scheda 'Import SAP' per iniziare."
