@@ -75,6 +75,77 @@ def build_recommendations_from_sales(
         ]
     ]
 
+# Funzione per generare le raccomandazioni applicando i filtri di business
+def generate_recommendations(
+    df_raw: pd.DataFrame,
+    col_customer: str,
+    col_product: str,
+    col_desc: str,
+    col_qty: str,
+    col_date: str = None,
+    date_start: datetime = None,
+    date_end: datetime = None,
+    top_n: int = 0,
+    min_qty: int = 0,
+    score_floor: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Genera un DataFrame di raccomandazioni a partire dai dati di vendita grezzi.
+
+    Filtra il dataset per l'intervallo di date se fornito, raggruppa per cliente e prodotto,
+    normalizza le quantità e applica eventuali filtri (quantità minima, soglia di punteggio,
+    top-N per cliente).
+
+    Parameters
+    ----------
+    df_raw : DataFrame
+        Il dataset originale delle vendite.
+    col_customer, col_product, col_desc, col_qty : str
+        Nomi delle colonne per cliente, articolo, descrizione e quantità.
+    col_date : str, opzionale
+        Nome della colonna data da utilizzare per il filtro temporale.
+    date_start, date_end : datetime, opzionale
+        Limiti inferiori e superiori del periodo di riferimento.
+    top_n : int
+        Numero massimo di prodotti per cliente (0 = nessun limite).
+    min_qty : int
+        Quantità minima proposta per includere un prodotto nelle raccomandazioni.
+    score_floor : float
+        Soglia minima del punteggio normalizzato per includere un prodotto.
+
+    Returns
+    -------
+    DataFrame
+        Il DataFrame delle raccomandazioni filtrato e ordinato.
+    """
+    # Calcola raccomandazioni di base
+    df_recs = build_recommendations_from_sales(
+        df_raw,
+        col_customer=col_customer,
+        col_product=col_product,
+        col_desc=col_desc,
+        col_qty=col_qty,
+        col_date=col_date,
+        date_start=date_start,
+        date_end=date_end,
+    )
+    # Applica filtri business
+    if min_qty > 0:
+        df_recs = df_recs[df_recs["predicted_qty"] >= min_qty]
+    if score_floor > 0:
+        df_recs = df_recs[df_recs["normalized_score"] >= score_floor]
+    if top_n > 0:
+        df_recs = (
+            df_recs.sort_values(
+                ["customer_id", "normalized_score", "predicted_qty"],
+                ascending=[True, False, False],
+            )
+            .groupby("customer_id")
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+    return df_recs.copy()
+
 # Inizializza session_state se necessario
 if "all_df" not in st.session_state:
     st.session_state["all_df"] = None
@@ -174,37 +245,33 @@ with tab_import:
                 )
 
             if st.button("Genera proposte da Excel"):
-                df_recs = build_recommendations_from_sales(
+                # Determina la colonna data da utilizzare
+                selected_col_date = None if col_date_sel == "(nessuna)" else col_date_sel
+                # Genera le raccomandazioni con i parametri selezionati
+                df_recs = generate_recommendations(
                     df_raw,
                     col_customer=col_customer,
                     col_product=col_product,
                     col_desc=col_desc,
                     col_qty=col_qty,
-                    col_date=None
-                    if col_date_sel == "(nessuna)"
-                    else col_date_sel,
+                    col_date=selected_col_date,
                     date_start=date_start,
                     date_end=date_end,
+                    top_n=top_n,
+                    min_qty=min_qty,
+                    score_floor=score_floor,
                 )
-                # applica filtri
-                if min_qty > 0:
-                    df_recs = df_recs[df_recs["predicted_qty"] >= min_qty]
-                if score_floor > 0:
-                    df_recs = df_recs[
-                        df_recs["normalized_score"] >= score_floor
-                    ]
-                if top_n > 0:
-                    df_recs = (
-                        df_recs.sort_values(
-                            ["customer_id", "normalized_score", "predicted_qty"],
-                            ascending=[True, False, False],
-                        )
-                        .groupby("customer_id")
-                        .head(top_n)
-                        .reset_index(drop=True)
-                    )
-
-                # salva intervallo date e dati in sessione
+                # salva dati e parametri in sessione per poter rigenerare le proposte
+                st.session_state["df_raw"] = df_raw
+                st.session_state["col_customer"] = col_customer
+                st.session_state["col_product"] = col_product
+                st.session_state["col_desc"] = col_desc
+                st.session_state["col_qty"] = col_qty
+                st.session_state["col_date"] = selected_col_date
+                st.session_state["top_n"] = top_n
+                st.session_state["min_qty"] = min_qty
+                st.session_state["score_floor"] = score_floor
+                # salva intervallo date e DataFrame raccomandazioni
                 st.session_state["date_start"] = date_start
                 st.session_state["date_end"] = date_end
                 st.session_state["all_df"] = df_recs.copy()
@@ -216,7 +283,7 @@ with tab_import:
                     df_recs.head(50), use_container_width=True
                 )
 
-                # Download
+                # Download file delle proposte
                 csv_bytes = df_recs.to_csv(index=False).encode("utf-8")
                 json_bytes = df_recs.to_json(
                     orient="records", force_ascii=False
@@ -258,6 +325,65 @@ with tab_manage:
             st.info(
                 f"Periodo selezionato: {st.session_state['date_start'].date()} – {st.session_state['date_end'].date()}"
             )
+
+        # Se disponibile il dataframe originale e la colonna data, consenti di aggiornare il periodo
+        if "df_raw" in st.session_state and st.session_state.get("col_date"):
+            col_date_name = st.session_state.get("col_date")
+            if col_date_name:
+                df_raw_cached = st.session_state["df_raw"]
+                # Calcola l'intervallo minimo e massimo dal dataset grezzo
+                dates_series_out = pd.to_datetime(
+                    df_raw_cached[col_date_name], errors="coerce"
+                )
+                min_date_out = dates_series_out.min()
+                max_date_out = dates_series_out.max()
+                # Imposta valori di default
+                current_start = st.session_state.get("date_start")
+                current_end = st.session_state.get("date_end")
+                default_start = (
+                    current_start.date()
+                    if current_start is not None
+                    else min_date_out.date() if pd.notnull(min_date_out) else None
+                )
+                default_end = (
+                    current_end.date()
+                    if current_end is not None
+                    else max_date_out.date() if pd.notnull(max_date_out) else None
+                )
+                if default_start and default_end:
+                    new_range = st.date_input(
+                        "Seleziona periodo di riferimento per la proposta",
+                        value=(default_start, default_end),
+                    )
+                    # Se l'utente cambia le date, aggiorna all'azione del bottone
+                    if (
+                        isinstance(new_range, tuple)
+                        and len(new_range) == 2
+                        and st.button("Aggiorna proposte")
+                    ):
+                        new_start = pd.to_datetime(new_range[0])
+                        new_end = pd.to_datetime(new_range[1])
+                        # Ricrea le raccomandazioni con i parametri salvati
+                        df_recs_new = generate_recommendations(
+                            st.session_state["df_raw"],
+                            col_customer=st.session_state["col_customer"],
+                            col_product=st.session_state["col_product"],
+                            col_desc=st.session_state["col_desc"],
+                            col_qty=st.session_state["col_qty"],
+                            col_date=st.session_state.get("col_date"),
+                            date_start=new_start,
+                            date_end=new_end,
+                            top_n=st.session_state.get("top_n", 0),
+                            min_qty=st.session_state.get("min_qty", 0),
+                            score_floor=st.session_state.get("score_floor", 0.0),
+                        )
+                        # aggiorna sessione
+                        st.session_state["date_start"] = new_start
+                        st.session_state["date_end"] = new_end
+                        st.session_state["all_df"] = df_recs_new.copy()
+                        df = df_recs_new
+                        # forza il rerun della app per aggiornare i dati
+                        st.experimental_rerun()
 
         client_ids = sorted(df["customer_id"].unique())
         selected_client = st.selectbox("Seleziona cliente", client_ids)
