@@ -176,33 +176,64 @@ with tab_import:
                 "Colonna cliente",
                 cols,
                 index=preselect(
-                    ["Codice cliente/fornitore", "Cliente", "CodCliente"]
+                    [
+                        "cardcode",
+                        "CardCode",
+                        "Codice cliente/fornitore",
+                        "Cliente",
+                        "CodCliente",
+                    ]
                 ),
             )
             col_product = st.selectbox(
                 "Colonna articolo",
                 cols,
-                index=preselect(["Codice articolo", "Articolo", "CodArticolo"]),
+                index=preselect(
+                    [
+                        "ItemCode",
+                        "Codice articolo",
+                        "Articolo",
+                        "CodArticolo",
+                    ]
+                ),
             )
             col_desc = st.selectbox(
                 "Colonna descrizione",
                 cols,
                 index=preselect(
-                    ["Descrizione articolo", "Descrizione", "DescArticolo"]
+                    [
+                        "ItemName",
+                        "Descrizione articolo",
+                        "Descrizione",
+                        "DescArticolo",
+                    ]
                 ),
             )
             col_qty = st.selectbox(
                 "Colonna quantità (venduto/spedito)",
                 cols,
                 index=preselect(
-                    ["QtaSped", "Qta", "Quantità", "QtaVenduta"]
+                    [
+                        "Quantity",
+                        "QtaSped",
+                        "Qta",
+                        "Quantità",
+                        "QtaVenduta",
+                    ]
                 ),
             )
 
             # Colonna data opzionale
             col_date_options = ["(nessuna)"] + cols
+            # Preseleziona la colonna data usando nomi comuni
+            date_candidates = ["DocDate", "Doc Date", "Data", "Date", "DataOrdine"]
+            date_index = 0
+            for i, c in enumerate(cols):
+                if c in date_candidates:
+                    date_index = i + 1  # +1 perché "(nessuna)" è all'indice 0
+                    break
             col_date_sel = st.selectbox(
-                "Colonna data (opzionale)", col_date_options, index=0
+                "Colonna data (opzionale)", col_date_options, index=date_index
             )
 
             date_start = None
@@ -245,61 +276,67 @@ with tab_import:
                 )
 
             if st.button("Genera proposte da Excel"):
-                # Determina la colonna data da utilizzare
-                selected_col_date = None if col_date_sel == "(nessuna)" else col_date_sel
-                # Genera le raccomandazioni con i parametri selezionati
-                df_recs = generate_recommendations(
-                    df_raw,
-                    col_customer=col_customer,
-                    col_product=col_product,
-                    col_desc=col_desc,
-                    col_qty=col_qty,
-                    col_date=selected_col_date,
-                    date_start=date_start,
-                    date_end=date_end,
-                    top_n=top_n,
-                    min_qty=min_qty,
-                    score_floor=score_floor,
-                )
-                # salva dati e parametri in sessione per poter rigenerare le proposte
-                st.session_state["df_raw"] = df_raw
-                st.session_state["col_customer"] = col_customer
-                st.session_state["col_product"] = col_product
-                st.session_state["col_desc"] = col_desc
-                st.session_state["col_qty"] = col_qty
-                st.session_state["col_date"] = selected_col_date
-                st.session_state["top_n"] = top_n
-                st.session_state["min_qty"] = min_qty
-                st.session_state["score_floor"] = score_floor
-                # salva intervallo date e DataFrame raccomandazioni
-                st.session_state["date_start"] = date_start
-                st.session_state["date_end"] = date_end
-                st.session_state["all_df"] = df_recs.copy()
+                # Verifica che tutte le colonne selezionate siano diverse
+                if len({col_customer, col_product, col_desc, col_qty}) < 4:
+                    st.error(
+                        "Ogni colonna selezionata deve essere diversa. Per favore, seleziona colonne distinte per cliente, articolo, descrizione e quantità."
+                    )
+                else:
+                    # Determina la colonna data da utilizzare
+                    selected_col_date = None if col_date_sel == "(nessuna)" else col_date_sel
+                    # Genera le raccomandazioni con i parametri selezionati
+                    df_recs = generate_recommendations(
+                        df_raw,
+                        col_customer=col_customer,
+                        col_product=col_product,
+                        col_desc=col_desc,
+                        col_qty=col_qty,
+                        col_date=selected_col_date,
+                        date_start=date_start,
+                        date_end=date_end,
+                        top_n=top_n,
+                        min_qty=min_qty,
+                        score_floor=score_floor,
+                    )
+                    # salva dati e parametri in sessione per poter rigenerare le proposte
+                    st.session_state["df_raw"] = df_raw
+                    st.session_state["col_customer"] = col_customer
+                    st.session_state["col_product"] = col_product
+                    st.session_state["col_desc"] = col_desc
+                    st.session_state["col_qty"] = col_qty
+                    st.session_state["col_date"] = selected_col_date
+                    st.session_state["top_n"] = top_n
+                    st.session_state["min_qty"] = min_qty
+                    st.session_state["score_floor"] = score_floor
+                    # salva intervallo date e DataFrame raccomandazioni
+                    st.session_state["date_start"] = date_start
+                    st.session_state["date_end"] = date_end
+                    st.session_state["all_df"] = df_recs.copy()
 
-                st.success(
-                    f"Proposte generate: {len(df_recs)}. Vai alla scheda 'Gestione riordini' per continuare."
-                )
-                st.dataframe(
-                    df_recs.head(50), use_container_width=True
-                )
+                    st.success(
+                        f"Proposte generate: {len(df_recs)}. Vai alla scheda 'Gestione riordini' per continuare."
+                    )
+                    st.dataframe(
+                        df_recs.head(50), use_container_width=True
+                    )
 
-                # Download file delle proposte
-                csv_bytes = df_recs.to_csv(index=False).encode("utf-8")
-                json_bytes = df_recs.to_json(
-                    orient="records", force_ascii=False
-                ).encode("utf-8")
-                st.download_button(
-                    "Scarica proposte (CSV)",
-                    data=csv_bytes,
-                    file_name="proposte_riordino.csv",
-                    mime="text/csv",
-                )
-                st.download_button(
-                    "Scarica proposte (JSON)",
-                    data=json_bytes,
-                    file_name="proposte_riordino.json",
-                    mime="application/json",
-                )
+                    # Download file delle proposte
+                    csv_bytes = df_recs.to_csv(index=False).encode("utf-8")
+                    json_bytes = df_recs.to_json(
+                        orient="records", force_ascii=False
+                    ).encode("utf-8")
+                    st.download_button(
+                        "Scarica proposte (CSV)",
+                        data=csv_bytes,
+                        file_name="proposte_riordino.csv",
+                        mime="text/csv",
+                    )
+                    st.download_button(
+                        "Scarica proposte (JSON)",
+                        data=json_bytes,
+                        file_name="proposte_riordino.json",
+                        mime="application/json",
+                    )
         except Exception as e:
             st.error(f"Errore durante l'elaborazione del file: {e}")
 
