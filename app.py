@@ -137,8 +137,10 @@ with tab_import:
                         .head(top_n)
                         .reset_index(drop=True)
                     )
-                st.session_state["all_df"] = df_recs.copy()
-                st.success(f"Proposte generate: {len(df_recs):,}")
+                     st.session_state["date_start"] = date_start
+        st.session_state["date_end"] = date_end
+                     
+                        st.success(f"Proposte generate: {len(df_recs)}. Vai alla scheda 'Gestione riordini' per continuare.")
                 st.dataframe(df_recs.head(50), use_container_width=True)
 
                 # Download
@@ -161,6 +163,11 @@ with tab_manage:
             df = pd.DataFrame()
 
     if df is not None and not df.empty:
+                # Visualizza il periodo selezionato se disponibile
+        if "date_start" in st.session_state and st.session_state["date_start"] is not None:
+            st.info(f"Periodo selezionato: {st.session_state['date_start'].date()} – {st.session_state['date_end'].date()}")
+
+
         client_ids = sorted(df["customer_id"].unique())
         selected_client = st.selectbox("Seleziona cliente", client_ids)
         df_client = df[df["customer_id"] == selected_client].copy()
