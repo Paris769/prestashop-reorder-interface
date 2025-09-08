@@ -612,6 +612,8 @@ with tab_manage:
                             min_qty=st.session_state.get("min_qty", 0),
                             score_floor=st.session_state.get("score_floor", 0.0),
                         )
+                                # removed st.experimental_rerun to avoid AttributeError
+
                         # aggiorna sessione
                         st.session_state["date_start"] = new_start
                         st.session_state["date_end"] = new_end
