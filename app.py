@@ -12,10 +12,26 @@ st.set_page_config(page_title="Gestione Riordini PrestaShop", layout="wide")
 with st.sidebar:
     # La chiave API è necessaria per autenticare le chiamate al Webservice
     api_key_input = st.text_input("Chiave API PrestaShop", type="password")
-    # URL base del negozio (es. https://mioshop.it). Serve per costruire gli endpoint
+      # Test connessione al Webservice PrestaShop
+        if st.button("Test connessione"):
+            if api_key_input and base_url_input:
+                test_url = base_url_input.rstrip("/") + "/api/products?limit=1"
+                try:
+                    resp = requests.get(test_url, auth=(api_key_input, ""), timeout=10)
+                    if resp.status_code == 200:
+                    st.success("Connessione al Webservice PrestaShop OK!")
+                else:
+                    st.error(f"Errore {resp.status_code}: {resp.text}")
+            except Exception as e:
+                st.error(f"Errore di connessione: {e}")
+        else:
+            st.warning("Inserisci prima la chiave API e l'URL base.")
+  # URL base del negozio (es. https://mioshop.it). Serve per costruire gli endpoint
     base_url_input = st.text_input(
         "URL base PrestaShop", placeholder="https://example.com"
-    )
+   
+  
+  
 
 # Funzioni di utilità per l'importazione di Excel/CSV
 def _load_excel_or_csv(uploaded_file: io.BytesIO) -> pd.DataFrame:
