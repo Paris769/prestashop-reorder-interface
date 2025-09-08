@@ -583,7 +583,8 @@ with tab_manage:
         df_all = st.session_state["all_df"].copy()
         # selezione cliente
         clients = sorted(df_all["customer_id"].unique().tolist())
-        selected_client = st.selectbox("Seleziona cliente", clients)
+        # Usa una chiave esplicita per evitare conflitti con altri selectbox con la stessa etichetta
+        selected_client = st.selectbox("Seleziona cliente", clients, key="manage_client_select")
         # visualizza data periodo
         if st.session_state.get("date_start") is not None and st.session_state.get("date_end") is not None:
             st.caption(
@@ -657,7 +658,8 @@ with tab_xsell:
         else:
             # selezione cliente unico
             clients = sorted(df_sales[col_customer].astype(str).unique().tolist())
-            sel_client = st.selectbox("Seleziona cliente", clients)
+            # Usa una chiave distinta per evitare StreamlitDuplicateElementID quando esistono più selectbox con lo stesso label
+            sel_client = st.selectbox("Seleziona cliente", clients, key="xsell_client_select")
             # intervallo periodo
             ds = st.session_state.get("date_start")
             de = st.session_state.get("date_end")
