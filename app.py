@@ -35,6 +35,7 @@ def build_recommendations_from_sales(
     col_qty: str,
     col_date=None,
     date_start=None,
+    
     date_end=None,
 ) -> pd.DataFrame:
     df = df_raw.copy()
@@ -616,8 +617,9 @@ with tab_manage:
                         st.session_state["date_end"] = new_end
                         st.session_state["all_df"] = df_recs_new.copy()
                         df = df_recs_new
-                        # forza il rerun della app per aggiornare i dati
-                        st.experimental_rerun()
+                        
+
+        
 
         client_ids = sorted(df["customer_id"].unique())
         selected_client = st.selectbox("Seleziona cliente", client_ids)
@@ -685,6 +687,7 @@ with tab_manage:
                         st.success(status_msg)
                     else:
                         st.error(status_msg)
+         
                     # Mostra riepilogo dell'ordine
                     st.write("Cliente:", selected_client)
                     st.write("Prodotti selezionati:")
