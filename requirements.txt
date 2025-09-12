@@ -1,3 +1,5 @@
 streamlit
 pandas
 openpyxl
+pdfplumber>=0.11
+rapidfuzz>=3.6
