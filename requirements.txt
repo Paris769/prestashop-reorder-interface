@@ -6,7 +6,3 @@ pdfminer.six==20221105
 Pillow==10.2.0
 rapidfuzz==3.6.1
 python-dateutil==2.9.0.post0
-markdown-it-py==3.0.0
-mdurl==0.1.2
-rich==14.1.0
-pygments==2.19.1
