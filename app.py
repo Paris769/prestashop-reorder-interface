@@ -108,6 +108,14 @@ with tab_order:
             except Exception as e:
                 st.error(f"Impossibile leggere l'ordine: {e}")
 
+    # Se è stato caricato un ordine, mostra quante righe sono state rilevate.
+    if order_df is not None:
+        try:
+            n_rows_order = len(order_df)
+            st.info(f"Numero righe prodotto rilevate nell'ordine: {n_rows_order}")
+        except Exception:
+            pass
+
     # Caricamento dello storico vendite
     sales_df = None
     if up_sales is not None:
@@ -115,6 +123,59 @@ with tab_order:
             sales_df = read_table(up_sales)
         except Exception as e:
             st.error(f"Storico non leggibile: {e}")
+
+    # Se è stato caricato uno storico vendite, cerca di individuare automaticamente le colonne
+    # relative al codice articolo, alla descrizione e alla quantità. Visualizza un messaggio
+    # informativo con il risultato della rilevazione per consentire all'utente di verificare
+    # che i campi siano corretti. Questa logica non modifica i dati, ma aiuta a
+    # comprendere quali colonne verranno usate dal matcher.
+    if sales_df is not None:
+        try:
+            cols_lower = {c: str(c).lower() for c in sales_df.columns}
+            # funzioni di ricerca per codice, descrizione e quantità simili a load_order_excel
+            def pick(candidate_names):
+                for c in candidate_names:
+                    for col, lc in cols_lower.items():
+                        if lc == c:
+                            return col
+                return None
+            code_col = pick([
+                "itemcode",
+                "codice",
+                "codice articolo",
+                "sku",
+                "reference",
+                "prodotto",
+                "articolo",
+            ])
+            desc_col = pick([
+                "description",
+                "descrizione",
+                "itemname",
+                "name",
+                "product",
+                "prodotto",
+                "articolo",
+            ])
+            qty_col = pick([
+                "qty",
+                "quantita",
+                "quantity",
+                "quantità",
+                "qta",
+                "qta ordinata",
+                "pezzi",
+            ])
+            detected_cols = {
+                "codice": code_col or "<non rilevato>",
+                "descrizione": desc_col or "<non rilevato>",
+                "quantità": qty_col or "<non rilevato>",
+            }
+            st.info(
+                f"Colonne rilevate nello storico vendite → codice: {detected_cols['codice']}, descrizione: {detected_cols['descrizione']}, quantità: {detected_cols['quantità']}"
+            )
+        except Exception:
+            pass
 
     # Usa lo storico vendite anche come catalogo per il matching
     catalog_df = sales_df
