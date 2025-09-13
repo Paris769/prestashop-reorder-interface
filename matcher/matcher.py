@@ -106,13 +106,36 @@ def load_order_pdf(file) -> pd.DataFrame:
 
     # if the first extracted row contains no meaningful text (all cells blank),
     # treat as if no table was found to trigger the fallback parsing logic below.
+    # Additionally, some vendor PDFs produce very small tables that contain only
+    # a handful of rows (e.g. vendor address or header rows) rather than the
+    # actual list of items. If the table has fewer than 5 rows, it almost
+    # certainly is not the product list, so we force the fallback logic to
+    # run in that case as well.
     if rows:
         first_row = rows[0]
         # check if every cell in the first row is None or empty/whitespace
         if all(not (cell and str(cell).strip()) for cell in first_row):
             rows = []
+        # if we extracted fewer than 5 rows, assume this is not the item table
+        elif len(rows) < 5:
+            rows = []
 
     # standard table-based extraction
+    if rows:
+        # special case: some vendor PDFs have a header row containing
+        # 'Item' and 'Qty' (e.g. 'Item No. Vendor No. Item Qty Unit Price Total').
+        # In these forms the actual items are not extracted properly by
+        # pdfplumber.extract_tables() because the table parser splits the lines
+        # irregularly. To handle these PDFs we skip the table-based logic and
+        # fall back to the text parser when such a header is detected.
+        first = rows[0]
+        try:
+            header_join = " ".join(first).lower()
+        except Exception:
+            header_join = ""
+        if 'item' in header_join and 'qty' in header_join:
+            rows = []
+
     if rows:
         header = max(rows[:5], key=lambda r: sum(len(c) for c in r))
         n = len(header)
