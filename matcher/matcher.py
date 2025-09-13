@@ -104,6 +104,14 @@ def load_order_pdf(file) -> pd.DataFrame:
                     cells = [str(x).strip() if x is not None else "" for x in r]
                     rows.append(cells)
 
+    # if the first extracted row contains no meaningful text (all cells blank),
+    # treat as if no table was found to trigger the fallback parsing logic below.
+    if rows:
+        first_row = rows[0]
+        # check if every cell in the first row is None or empty/whitespace
+        if all(not (cell and str(cell).strip()) for cell in first_row):
+            rows = []
+
     # standard table-based extraction
     if rows:
         header = max(rows[:5], key=lambda r: sum(len(c) for c in r))
