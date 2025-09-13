@@ -164,6 +164,81 @@ def load_order_pdf(file) -> pd.DataFrame:
             return df[["order_itemcode", "order_desc", "order_desc_norm", "order_qty"]]
 
     # fallback: use text extraction to approximate items
+        # Begin improved fallback logic: parse uppercase item descriptions with quantities
+        # If the initial table-based parsing did not yield any valid items, we parse
+        # the PDF as plain text. Many vendor PDFs list items in uppercase lines
+        # followed by a quantity line. We activate scanning only after an
+        # item-table header that contains both 'Item' and 'Qty'. Scanning stops
+        # when encountering net or grand total lines or a new delivery date. We
+        # accumulate consecutive uppercase lines as a single description and
+        # extract the quantity from the next numeric line. This ensures the
+        # number of returned rows matches the number of product lines in the
+        # order.
+        improved_items: list[dict[str, object]] = []
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text() or ""
+                lines = [ln.strip() for ln in text.split("\n")]
+                in_table = False
+                current_desc: list[str] = []
+                for idx, line in enumerate(lines):
+                    # start scanning once both 'Item' and 'Qty' appear in the same line
+                    if not in_table:
+                        if (("Item" in line) or ("ITEM" in line)) and (("Qty" in line) or ("QTY" in line)):
+                            in_table = True
+                        continue
+                    # stop scanning at totals or new section headers
+                    if any(term in line for term in ["Net Total", "Grand", "Grand Total", "Net", "Delivery Date"]):
+                        if current_desc:
+                            desc = " ".join(current_desc).strip()
+                            improved_items.append({"order_itemcode": "", "order_desc": desc, "order_qty": 1})
+                            current_desc = []
+                        break
+                    # uppercase lines with letters are part of a description (exclude HSN lines)
+                    if (
+                        len(line) > 3
+                        and any(ch.isalpha() for ch in line)
+                        and line.upper() == line
+                        and not line.startswith("HSN")
+                    ):
+                        current_desc.append(line)
+                        continue
+                    # if we have accumulated description lines and encounter a line with numeric quantity
+                    if current_desc:
+                        m = re.search(r"(\d+[\.,]\d+)|(\d+)", line)
+                        if m:
+                            # determine quantity from the first number in the line
+                            try:
+                                q_val = float(m.group().replace(",", "."))
+                                qty = int(round(q_val)) if q_val > 0 else 1
+                            except Exception:
+                                qty = 1
+                            # attempt to extract a product code: look for long numeric sequences (>=5 digits)
+                            code_candidates = re.findall(r"\d{5,}", line)
+                            code = code_candidates[-1] if code_candidates else ""
+                            desc = " ".join(current_desc).strip()
+                            improved_items.append({"order_itemcode": code, "order_desc": desc, "order_qty": qty})
+                            current_desc = []
+                        else:
+                            # continue accumulating uppercase fragments if no quantity yet
+                            if (
+                                len(line) > 0
+                                and any(ch.isalpha() for ch in line)
+                                and line.upper() == line
+                                and not line.startswith("HSN")
+                            ):
+                                current_desc.append(line)
+                # flush leftover description at end of page
+                if current_desc:
+                    desc = " ".join(current_desc).strip()
+                    # no quantity line encountered, so default qty = 1 and no code
+                    improved_items.append({"order_itemcode": "", "order_desc": desc, "order_qty": 1})
+                    current_desc = []
+        if improved_items:
+            fallback_df = pd.DataFrame(improved_items)
+            fallback_df["order_desc_norm"] = fallback_df["order_desc"].map(_norm_txt)
+            return fallback_df[["order_itemcode", "order_desc", "order_desc_norm", "order_qty"]]
+        # End improved fallback logic
     items: list[dict[str, object]] = []
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
@@ -348,8 +423,10 @@ def match_order_to_catalog(
                 fuzz.partial_ratio(oname_norm, row["name_norm"]),
             ) / 100.0
             pid = str(row["product_id"])
+            # combine recency/frequency stats into a purchase bias
             pb = 0.4 * rec_norm.get(pid, 0.0) + 0.6 * freq_norm.get(pid, 0.0)
-            p = 0.65 * sim + 0.35 * pb
+            # weight fuzzy similarity lower and purchase history higher to prioritise frequently bought items
+            p = 0.35 * sim + 0.65 * pb
             sims.append((pid, row["name"], p, sim, pb))
         sims.sort(key=lambda x: x[2], reverse=True)
         pid_best, name_best, p_best, *_ = sims[0]
