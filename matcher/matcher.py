@@ -354,3 +354,48 @@ def match_order_to_catalog(
             }
         )
     return pd.DataFrame(results)
+
+# -----------------------------------------------------------------------------
+# SAP export
+# -----------------------------------------------------------------------------
+def export_sap_excel(header: dict, df: pd.DataFrame) -> bytes:
+    """Export matched order to SAP Excel with ORDR and RDR1 sheets.
+
+    Parameters
+    ----------
+    header : dict
+        Dictionary with order header fields like DocDate, CardCode, Comments.
+    df : pandas.DataFrame
+        Matched order lines. Should contain columns for item code and quantity.
+
+    Returns
+    -------
+    bytes
+        The bytes of the Excel file with two sheets: ORDR (header) and RDR1 (lines).
+    """
+    # Create header DataFrame
+    ordr_df = pd.DataFrame([header])
+    # Determine columns for item code and quantity
+    item_col = None
+    qty_col = None
+    for c in ['matched_itemcode', 'order_itemcode', 'match_itemcode', 'itemcode', 'item_code', 'code']:
+        if c in df.columns:
+            item_col = c
+            break
+    for c in ['order_qty', 'qty', 'quantity', 'qta']:
+        if c in df.columns:
+            qty_col = c
+            break
+    # Build RDR1 DataFrame
+    if item_col is not None and qty_col is not None:
+        rdr1_df = df[[item_col, qty_col]].copy()
+        rdr1_df.columns = ['ItemCode', 'Quantity']
+    else:
+        # Fallback: use entire dataframe if structure unknown
+        rdr1_df = df.copy()
+    # Write Excel to bytes buffer
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        ordr_df.to_excel(writer, sheet_name='ORDR', index=False)
+        rdr1_df.to_excel(writer, sheet_name='RDR1', index=False)
+    return buf.getvalue()
