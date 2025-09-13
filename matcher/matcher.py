@@ -116,13 +116,16 @@ def load_order_pdf(file) -> pd.DataFrame:
     if rows:
         header = max(rows[:5], key=lambda r: sum(len(c) for c in r))
         n = len(header)
+        # build a DataFrame from the extracted rows
         df = pd.DataFrame(
             [r if len(r) == n else (r + [""] * (n - len(r))) for r in rows],
             columns=[f"col{i}" for i in range(n)],
         )
+        # initialise output columns
         df["order_itemcode"] = ""
         df["order_desc"] = ""
         df["order_qty"] = 1
+        # heuristics to pick which column contains codes, quantities and descriptions
         for c in df.columns:
             if c.startswith("col"):
                 sample = df[c].head(50).astype(str).tolist()
@@ -131,10 +134,12 @@ def load_order_pdf(file) -> pd.DataFrame:
                     1 for v in sample if re.match(r"^\d+([,\.]\d+)?$", v)
                 )
                 longtxt = sum(1 for v in sample if len(v) > 15)
+                # if many alphanumeric codes, assume this column contains item codes
                 if alnum > 20:
                     df["order_itemcode"] = df["order_itemcode"].mask(
                         df["order_itemcode"] == "", df[c]
                     )
+                # if many numeric values, assume quantities
                 if numeric > 20:
                     q = pd.to_numeric(
                         df[c].str.replace(",", ".", regex=False), errors="coerce"
@@ -142,12 +147,21 @@ def load_order_pdf(file) -> pd.DataFrame:
                     df["order_qty"] = df["order_qty"].mask(
                         df["order_qty"] == 1, q.fillna(1).astype(int)
                     )
+                # if many long text entries, assume descriptions
                 if longtxt > 20:
                     df["order_desc"] = df["order_desc"].mask(
                         df["order_desc"] == "", df[c]
                     )
         df["order_desc_norm"] = df["order_desc"].map(_norm_txt)
-        return df[["order_itemcode", "order_desc", "order_desc_norm", "order_qty"]]
+        # if after table parsing the itemcode and description columns are still blank,
+        # treat as if no valid table was found and trigger text-based fallback
+        if (
+            df["order_itemcode"].astype(str).str.strip().eq("").all()
+            and df["order_desc"].astype(str).str.strip().eq("").all()
+        ):
+            rows = []
+        else:
+            return df[["order_itemcode", "order_desc", "order_desc_norm", "order_qty"]]
 
     # fallback: use text extraction to approximate items
     items: list[dict[str, object]] = []
